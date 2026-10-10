@@ -1,368 +1,516 @@
--- Linguagem: Lua | Executor: Delta | UI: Rayfield
--- Dep: Rayfield — carregado via HttpGet sirius.menu
--- Dep: getgenv() — estado global entre reinjeções
--- PlaceId FtF: 893973440
+-- Lang: Lua | Executor: Delta/Synapse/Fluxus | UI: Rayfield
+-- Dep: Rayfield via sirius.menu/rayfield
+-- Jogo: Flee The Facility | PlaceId: 893973440
+-- Uso: loadstring(game:HttpGet("SEU_RAW_LINK"))()
 
-local Rayfield = loadstring(game:HttpGet(
-    'https://sirius.menu/rayfield'))()
+-- ── Proteção de injeção dupla ──────────────────────────────────
+if getgenv().OllieFTF_Loaded then
+    print("[olliE] já carregado, pulando")
+    return
+end
+getgenv().OllieFTF_Loaded = true
+
+-- ── Carrega Rayfield ───────────────────────────────────────────
+local ok, Rayfield = pcall(function()
+    return loadstring(game:HttpGet(
+        "https://sirius.menu/rayfield", true))()
+end)
+
+if not ok or not Rayfield then
+    -- fallback: tenta raw github do Rayfield
+    ok, Rayfield = pcall(function()
+        return loadstring(game:HttpGet(
+            "https://raw.githubusercontent.com/SiriusHubOfficial/Rayfield/main/source.lua", true))()
+    end)
+end
+
+if not ok or not Rayfield then
+    warn("[olliE] Rayfield falhou — verifica conexão ou executor")
+    return
+end
 
 -- ── Serviços ───────────────────────────────────────────────────
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
-local UserInput     = game:GetService("UserInputService")
-local TweenService  = game:GetService("TweenService")
-local Camera        = workspace.CurrentCamera
-local LocalPlayer   = Players.LocalPlayer
+local Players        = game:GetService("Players")
+local RunService     = game:GetService("RunService")
+local UserInput      = game:GetService("UserInputService")
+local TweenService   = game:GetService("TweenService")
+local Debris         = game:GetService("Debris")
+local VirtualUser    = game:GetService("VirtualUser")
+local TeleportSvc    = game:GetService("TeleportService")
+local ReplicatedSto  = game:GetService("ReplicatedStorage")
+local Camera         = workspace.CurrentCamera
+local LocalPlayer    = Players.LocalPlayer
 
--- ── Estado global ──────────────────────────────────────────────
-local cfg = getgenv().OllieFTF or {
-    -- ESP
-    SurvivorESP     = false,
-    BeastESP        = false,
-    ComputerESP     = false,
-    ExitESP         = false,
-    PodESP          = false,
-    Chams           = false,
-    Tracers         = false,
-    SkeletonESP     = false,
-    NametagESP      = false,
-    DistanceESP     = false,
-    StatusESP       = false,
-    ComputerStatus  = false,
-    BeastAlert      = false,
-    BeastAlertDist  = 50,
+-- ── Config global ──────────────────────────────────────────────
+local cfg = getgenv().OllieFTF_CFG or {
+    -- ESP Jogadores
+    SurvivorESP      = false,
+    BeastESP         = false,
+    ESPBox           = true,
+    ESPName          = true,
+    ESPDist          = true,
+    ESPStatus        = true,
+    ESPHealth        = true,
+    ESPWeapon        = false,
+    SkeletonESP      = false,
+    Chams            = false,
+    Tracers          = false,
+
+    -- ESP Objetos
+    ComputerESP      = false,
+    ComputerStatus   = false,
+    PodESP           = false,
+    ExitESP          = false,
+
+    -- Alerts
+    BeastAlert       = false,
+    BeastAlertDist   = 50,
 
     -- Survivor
-    Speed           = false,
-    SpeedVal        = 28,
-    WalkspeedLock   = false,
-    InfJump         = false,
-    BunnyHop        = false,
-    Fly             = false,
-    NoClip          = false,
-    NoCrawl         = false,
-    InfStamina      = false,
-    AntiFreeze      = false,
-    InstantHack     = false,
-    NoFailHack      = false,
-    AutoHack        = false,
-    AutoFree        = false,
-    AutoEscape      = false,
-    AutoDodge       = false,
-    AutoDodgeDist   = 40,
-    SafeZone        = false,
-    SafeZoneDist    = 60,
-    CompFinder      = false,
-    PodFinder       = false,
-    ExitFinder      = false,
-    FakeLag         = false,
-    FakeLagVal      = 0.1,
+    Speed            = false,
+    SpeedVal         = 32,
+    WalkLock         = false,
+    InfJump          = false,
+    BunnyHop         = false,
+    Fly              = false,
+    FlySpeed         = 32,
+    NoClip           = false,
+    NoCrawl          = false,
+    InfStamina       = false,
+    AntiFreeze       = false,
+    NoFailHack       = false,
+    InstantHack      = false,
+    AutoHack         = false,
+    AutoFree         = false,
+    AutoEscape       = false,
+    AutoDodge        = false,
+    AutoDodgeDist    = 40,
+    FakeLag          = false,
+    FakeLagVal       = 200,
+    GhostMode        = false,
 
     -- Beast
-    BeastAutoFreeze = false,
-    BeastTeleport   = false,
-    BeastNoCD       = false,
-    BeastSpeed      = false,
-    BeastSpeedVal   = 28,
-    BeastOneHit     = false,
-    BeastFreezeAll  = false,
-    BeastFling      = false,
+    BeastSpeed       = false,
+    BeastSpeedVal    = 40,
+    BeastTeleport    = false,
+    BeastAutoFreeze  = false,
+    BeastFreezeAll   = false,
+    BeastNoCD        = false,
+    BeastFling       = false,
+    BeastKillAura    = false,
+    BeastAuraRange   = 20,
 
     -- Misc
-    AntiAFK         = false,
-    ChatSpammer     = false,
-    ChatMsg         = "olliE ftf ez",
-    ChatDelay       = 5,
-    Rejoin          = false,
-    StatsHUD        = false,
-    AutoVote        = false,
-    TrollMode       = false,
-    Flashlight      = false,
-    ServerHop       = false,
+    AntiAFK          = false,
+    StatsHUD         = false,
+    Flashlight       = false,
+    ChatSpammer      = false,
+    ChatMsg          = "olliE ftf ez frfr",
+    ChatDelay        = 5,
+    ServerHop        = false,
+    AutoVote         = false,
+    TrollMode        = false,
+    Minimap          = false,
+    CrosshairCustom  = false,
+    CrosshairCol     = Color3.fromRGB(255, 50, 50),
 }
-getgenv().OllieFTF = cfg
+getgenv().OllieFTF_CFG = cfg
 
--- ── Util ───────────────────────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════
+-- UTIL
+-- ════════════════════════════════════════════════════════════════
 local function getChar()
     return LocalPlayer.Character
 end
 
-local function getRootPart()
+local function getRoot()
     local c = getChar()
     return c and c:FindFirstChild("HumanoidRootPart")
 end
 
-local function getHumanoid()
+local function getHum()
     local c = getChar()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function isAlive(player)
-    local c = player.Character
+local function isAlive(p)
+    local c = p.Character
     if not c then return false end
     local h = c:FindFirstChildOfClass("Humanoid")
     return h and h.Health > 0
 end
 
-local function isBeast(player)
-    -- Beast tem tag/valor no character ou nome de equipe
-    local c = player.Character
+local function isBeast(p)
+    local c = p.Character
     if not c then return false end
-    -- checa team name
-    if player.Team and player.Team.Name:lower():find("beast") then
+    if p.Team and tostring(p.Team.Name):lower():find("beast") then
         return true
     end
-    -- checa valor no character
-    local tag = c:FindFirstChild("IsBeast")
-        or c:FindFirstChild("Beast")
-    return tag ~= nil
-end
-
-local function isFrozen(player)
-    local c = player.Character
-    if not c then return false end
-    return c:FindFirstChild("Frozen") ~= nil
-        or c:FindFirstChild("IsFrozen") ~= nil
-end
-
-local function isHacking(player)
-    local c = player.Character
-    if not c then return false end
-    return c:FindFirstChild("Hacking") ~= nil
-        or c:FindFirstChild("IsHacking") ~= nil
-end
-
-local function worldToScreen(pos)
-    local sp, onScreen = Camera:WorldToViewportPoint(pos)
-    return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
-end
-
-local function distTo(part)
-    local root = getRootPart()
-    if not root or not part then return 999 end
-    return math.floor((root.Position - part.Position).Magnitude)
-end
-
--- ════════════════════════════════════════════════════════════════
---  ESP SISTEMA
--- ════════════════════════════════════════════════════════════════
-
--- ── Highlight ESP (Chams) ──────────────────────────────────────
-local highlights = {}
-
-local function clearHighlight(player)
-    if highlights[player] then
-        highlights[player]:Destroy()
-        highlights[player] = nil
+    for _, name in ipairs({"IsBeast","Beast","BeastTag"}) do
+        if c:FindFirstChild(name) then return true end
     end
+    -- checa se tem tag de Beast no valor do personagem
+    local val = c:FindFirstChild("PlayerType")
+        or c:FindFirstChild("Role")
+    if val and tostring(val.Value):lower():find("beast") then
+        return true
+    end
+    return false
 end
 
-local function buildHighlight(player, fillColor, outlineColor)
-    clearHighlight(player)
-    local hl = Instance.new("SelectionBox")
-    -- usa Highlight se disponível
-    local h = Instance.new("Highlight")
-    h.FillColor         = fillColor
-    h.OutlineColor      = outlineColor
-    h.FillTransparency  = 0.5
-    h.OutlineTransparency = 0
-    h.DepthMode         = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent            = player.Character
-    highlights[player]  = h
-    return h
+local function isFrozen(p)
+    local c = p.Character
+    if not c then return false end
+    for _, n in ipairs({"Frozen","IsFrozen","Freeze","Crystalized"}) do
+        if c:FindFirstChild(n) then return true end
+    end
+    return false
 end
 
--- ── Drawing ESP ────────────────────────────────────────────────
-local espDrawings = {}
+local function isHacking(p)
+    local c = p.Character
+    if not c then return false end
+    for _, n in ipairs({"Hacking","IsHacking","UsingComputer"}) do
+        if c:FindFirstChild(n) then return true end
+    end
+    return false
+end
 
-local function clearDrawing(key)
-    if espDrawings[key] then
-        for _, d in pairs(espDrawings[key]) do
-            pcall(function() d:Remove() end)
+local function toScreen(pos)
+    local sp, vis = Camera:WorldToViewportPoint(pos)
+    return Vector2.new(sp.X, sp.Y), vis, sp.Z
+end
+
+local function distTo(pos)
+    local r = getRoot()
+    if not r then return 9999 end
+    return math.floor((r.Position - pos).Magnitude)
+end
+
+local function getPlayers(excludeSelf, beastOnly, survivorOnly)
+    local out = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if excludeSelf and p == LocalPlayer then goto skip end
+        if beastOnly and not isBeast(p) then goto skip end
+        if survivorOnly and isBeast(p) then goto skip end
+        if not isAlive(p) then goto skip end
+        table.insert(out, p)
+        ::skip::
+    end
+    return out
+end
+
+local function findNearest(list, getPos)
+    local r = getRoot()
+    if not r then return nil end
+    local best, bestD = nil, math.huge
+    for _, v in ipairs(list) do
+        local pos = getPos(v)
+        if pos then
+            local d = (r.Position - pos).Magnitude
+            if d < bestD then bestD = d; best = v end
         end
-        espDrawings[key] = nil
     end
+    return best
 end
 
-local function makeText(size, color, outline)
+local function getPartPos(obj)
+    if not obj then return nil end
+    if obj:IsA("Model") then
+        local p = obj.PrimaryPart
+            or obj:FindFirstChildOfClass("BasePart")
+        return p and p.Position or nil
+    elseif obj:IsA("BasePart") then
+        return obj.Position
+    end
+    return nil
+end
+
+local function scanWorkspace(keywords)
+    local out = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local n = obj.Name:lower()
+            for _, kw in ipairs(keywords) do
+                if n:find(kw) then
+                    table.insert(out, obj)
+                    break
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- ════════════════════════════════════════════════════════════════
+-- DRAWING HELPERS
+-- ════════════════════════════════════════════════════════════════
+local allDrawings = {}
+
+local function newText(size, color)
     local t = Drawing.new("Text")
     t.Size    = size or 13
     t.Color   = color or Color3.fromRGB(255,255,255)
-    t.Outline = outline ~= false
+    t.Outline = true
     t.Center  = true
     t.Visible = false
+    table.insert(allDrawings, t)
     return t
 end
 
-local function makeLine(color, thickness)
+local function newLine(color, thick)
     local l = Drawing.new("Line")
     l.Color     = color or Color3.fromRGB(255,255,255)
-    l.Thickness = thickness or 1
+    l.Thickness = thick or 1
     l.Visible   = false
+    table.insert(allDrawings, l)
     return l
 end
 
-local function makeBox(color, thickness)
+local function newBox(color, thick)
     local b = Drawing.new("Square")
     b.Color     = color or Color3.fromRGB(255,255,255)
-    b.Thickness = thickness or 1.5
+    b.Thickness = thick or 1.5
     b.Filled    = false
     b.Visible   = false
+    table.insert(allDrawings, b)
     return b
 end
 
--- ── ESP de jogador ─────────────────────────────────────────────
-local playerESP = {}
-
-local function clearPlayerESP(player)
-    clearDrawing("player_" .. player.UserId)
-    clearHighlight(player)
-    playerESP[player] = nil
+local function newCircle(color, thick)
+    local c = Drawing.new("Circle")
+    c.Color     = color or Color3.fromRGB(255,255,255)
+    c.Thickness = thick or 1
+    c.NumSides  = 32
+    c.Filled    = false
+    c.Visible   = false
+    table.insert(allDrawings, c)
+    return c
 end
 
-local function buildPlayerESP(player)
-    if player == LocalPlayer then return end
-    clearPlayerESP(player)
-
-    local beast    = isBeast(player)
-    local fillCol  = beast
-        and Color3.fromRGB(220, 30, 30)
-        or  Color3.fromRGB(30, 220, 80)
-    local lblCol   = beast
-        and Color3.fromRGB(255, 80, 80)
-        or  Color3.fromRGB(80, 255, 120)
-
-    local drawings = {
-        box      = makeBox(fillCol, 1.5),
-        name     = makeText(13, lblCol),
-        dist     = makeText(11, Color3.fromRGB(200,200,200)),
-        status   = makeText(11, Color3.fromRGB(255,220,50)),
-        tracer   = makeLine(fillCol, 1),
-    }
-
-    -- skeleton lines (8 conexões básicas)
-    drawings.bones = {}
-    for i = 1, 8 do
-        table.insert(drawings.bones, makeLine(fillCol, 1))
-    end
-
-    espDrawings["player_" .. player.UserId] = drawings
-
-    -- Highlight/Chams
-    if cfg.Chams then
-        pcall(function()
-            buildHighlight(player, fillCol,
-                Color3.fromRGB(255,255,255))
-        end)
-    end
-
-    playerESP[player] = drawings
-end
-
--- conexões de esqueleto — pares de partes do corpo
+-- ════════════════════════════════════════════════════════════════
+-- ESP JOGADORES
+-- ════════════════════════════════════════════════════════════════
 local BONE_PAIRS = {
-    {"Head",        "UpperTorso"},
-    {"UpperTorso",  "LowerTorso"},
-    {"LowerTorso",  "LeftUpperLeg"},
-    {"LowerTorso",  "RightUpperLeg"},
+    {"Head","UpperTorso"},
+    {"UpperTorso","LowerTorso"},
+    {"LowerTorso","LeftUpperLeg"},
+    {"LowerTorso","RightUpperLeg"},
     {"LeftUpperLeg","LeftLowerLeg"},
     {"RightUpperLeg","RightLowerLeg"},
-    {"UpperTorso",  "LeftUpperArm"},
-    {"UpperTorso",  "RightUpperArm"},
+    {"UpperTorso","LeftUpperArm"},
+    {"UpperTorso","RightUpperArm"},
+    {"LeftUpperArm","LeftLowerArm"},
+    {"RightUpperArm","RightLowerArm"},
 }
 
+local playerESP  = {}
+local highlights = {}
+
+local function removeHighlight(p)
+    if highlights[p] then
+        pcall(function() highlights[p]:Destroy() end)
+        highlights[p] = nil
+    end
+end
+
+local function applyHighlight(p, fill, outline)
+    removeHighlight(p)
+    if not p.Character then return end
+    local h = Instance.new("Highlight")
+    h.FillColor           = fill
+    h.OutlineColor        = outline
+    h.FillTransparency    = 0.45
+    h.OutlineTransparency = 0
+    h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    h.Parent              = p.Character
+    highlights[p]         = h
+end
+
+local function buildPlayerESP(p)
+    if p == LocalPlayer then return end
+    if playerESP[p] then return end
+
+    local beast   = isBeast(p)
+    local col     = beast
+        and Color3.fromRGB(230, 40, 40)
+        or  Color3.fromRGB(40, 230, 90)
+
+    local d = {
+        box    = newBox(col, 1.5),
+        hpBG   = newBox(Color3.fromRGB(50,50,50), 1),
+        hpBar  = newBox(Color3.fromRGB(50,255,50), 1),
+        name   = newText(13, col),
+        dist   = newText(11, Color3.fromRGB(200,200,200)),
+        status = newText(11, Color3.fromRGB(255,220,50)),
+        tracer = newLine(col, 1),
+        bones  = {},
+    }
+    d.hpBG.Filled  = true
+    d.hpBar.Filled = true
+
+    for i = 1, #BONE_PAIRS do
+        table.insert(d.bones, newLine(col, 1))
+    end
+
+    playerESP[p] = d
+end
+
+local function removePlayerESP(p)
+    if playerESP[p] then
+        local d = playerESP[p]
+        for _, v in pairs(d) do
+            if type(v) == "table" then
+                for _, b in pairs(v) do
+                    pcall(function() b:Remove() end)
+                end
+            else
+                pcall(function() v:Remove() end)
+            end
+        end
+        playerESP[p] = nil
+    end
+    removeHighlight(p)
+end
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        buildPlayerESP(p)
+    end)
+    buildPlayerESP(p)
+end)
+
+Players.PlayerRemoving:Connect(removePlayerESP)
+
+for _, p in ipairs(Players:GetPlayers()) do
+    buildPlayerESP(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        removePlayerESP(p)
+        buildPlayerESP(p)
+    end)
+end
+
+-- ── ESP tick ──────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function()
-    for player, drawings in pairs(playerESP) do
-        local beast   = isBeast(player)
+    local cv = Camera.ViewportSize
+    local cx, cy = cv.X/2, cv.Y
+
+    for p, d in pairs(playerESP) do
+        local beast   = isBeast(p)
         local enabled = beast and cfg.BeastESP or cfg.SurvivorESP
 
-        local function hideAll()
-            for _, d in pairs(drawings) do
-                if type(d) == "table" then
-                    for _, b in pairs(d) do b.Visible = false end
-                else
-                    d.Visible = false
-                end
-            end
-            clearHighlight(player)
+        local function hide()
+            d.box.Visible    = false
+            d.hpBG.Visible   = false
+            d.hpBar.Visible  = false
+            d.name.Visible   = false
+            d.dist.Visible   = false
+            d.status.Visible = false
+            d.tracer.Visible = false
+            for _, b in ipairs(d.bones) do b.Visible = false end
+            removeHighlight(p)
         end
 
-        if not enabled then hideAll() ; goto continue end
+        if not enabled then hide() ; continue end
 
-        local char = player.Character
-        if not char or not isAlive(player) then
-            hideAll() ; goto continue
-        end
+        local char = p.Character
+        if not char or not isAlive(p) then hide() ; continue end
 
         local root = char:FindFirstChild("HumanoidRootPart")
         local head = char:FindFirstChild("Head")
-        if not root or not head then hideAll() ; goto continue end
+        if not root or not head then hide() ; continue end
 
-        local rootSc, onScreen, depth = worldToScreen(root.Position)
-        local headSc = worldToScreen(head.Position)
+        local rs, onS, depth = toScreen(root.Position)
+        local hs             = toScreen(head.Position)
+        if not onS or depth < 0 then hide() ; continue end
 
-        if not onScreen or depth < 0 then
-            hideAll() ; goto continue
-        end
+        local col = beast
+            and Color3.fromRGB(230,40,40)
+            or  Color3.fromRGB(40,230,90)
 
-        local h = (headSc - rootSc).Magnitude * 2
+        local h = (hs - rs).Magnitude * 2
         local w = h * 0.55
 
         -- Box
-        drawings.box.Visible  = true
-        drawings.box.Size     = Vector2.new(w, h)
-        drawings.box.Position = Vector2.new(
-            rootSc.X - w/2, rootSc.Y - h)
-        drawings.box.Color    = beast
-            and Color3.fromRGB(220,30,30)
-            or  Color3.fromRGB(30,220,80)
+        if cfg.ESPBox then
+            d.box.Visible  = true
+            d.box.Color    = col
+            d.box.Size     = Vector2.new(w, h)
+            d.box.Position = Vector2.new(rs.X - w/2, rs.Y - h)
+        else
+            d.box.Visible = false
+        end
+
+        -- HP Bar
+        if cfg.ESPHealth then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local pct = hum and (hum.Health/hum.MaxHealth) or 0
+            local barH = h * pct
+            local barX = rs.X - w/2 - 6
+
+            d.hpBG.Visible   = true
+            d.hpBG.Size      = Vector2.new(4, h)
+            d.hpBG.Position  = Vector2.new(barX, rs.Y - h)
+
+            d.hpBar.Visible  = true
+            d.hpBar.Size     = Vector2.new(4, barH)
+            d.hpBar.Position = Vector2.new(barX, rs.Y - barH)
+            d.hpBar.Color    = Color3.fromRGB(
+                math.floor(255*(1-pct)),
+                math.floor(255*pct), 0)
+        else
+            d.hpBG.Visible  = false
+            d.hpBar.Visible = false
+        end
 
         -- Nome
-        if cfg.NametagESP then
-            drawings.name.Visible  = true
-            drawings.name.Text     = (beast and "👹 " or "🟢 ")
-                .. player.DisplayName
-            drawings.name.Position = Vector2.new(
-                rootSc.X, rootSc.Y - h - 14)
+        if cfg.ESPName then
+            local prefix = beast and "[BEAST] " or ""
+            d.name.Visible  = true
+            d.name.Color    = col
+            d.name.Text     = prefix .. p.DisplayName
+            d.name.Position = Vector2.new(rs.X, rs.Y - h - 14)
         else
-            drawings.name.Visible = false
+            d.name.Visible = false
         end
 
         -- Distância
-        if cfg.DistanceESP then
-            drawings.dist.Visible  = true
-            drawings.dist.Text     = distTo(root) .. "m"
-            drawings.dist.Position = Vector2.new(
-                rootSc.X, rootSc.Y + 3)
+        if cfg.ESPDist then
+            d.dist.Visible  = true
+            d.dist.Text     = distTo(root.Position) .. "m"
+            d.dist.Position = Vector2.new(rs.X, rs.Y + 3)
         else
-            drawings.dist.Visible = false
+            d.dist.Visible = false
         end
 
         -- Status
-        if cfg.StatusESP then
-            local status = isFrozen(player) and "❄ FROZEN"
-                or isHacking(player) and "💻 HACKING"
-                or "● FREE"
-            drawings.status.Visible  = true
-            drawings.status.Text     = status
-            drawings.status.Position = Vector2.new(
-                rootSc.X, rootSc.Y + 15)
+        if cfg.ESPStatus then
+            local s = isFrozen(p) and "FROZEN"
+                or isHacking(p) and "HACKING"
+                or "FREE"
+            local sc = isFrozen(p)
+                and Color3.fromRGB(100,200,255)
+                or isHacking(p)
+                and Color3.fromRGB(255,220,50)
+                or  Color3.fromRGB(200,200,200)
+            d.status.Visible  = true
+            d.status.Color    = sc
+            d.status.Text     = s
+            d.status.Position = Vector2.new(rs.X, rs.Y + 15)
         else
-            drawings.status.Visible = false
+            d.status.Visible = false
         end
 
         -- Tracer
         if cfg.Tracers then
-            drawings.tracer.Visible = true
-            drawings.tracer.From    = Vector2.new(
-                Camera.ViewportSize.X / 2,
-                Camera.ViewportSize.Y)
-            drawings.tracer.To      = rootSc
-            drawings.tracer.Color   = beast
-                and Color3.fromRGB(220,30,30)
-                or  Color3.fromRGB(30,220,80)
+            d.tracer.Visible = true
+            d.tracer.Color   = col
+            d.tracer.From    = Vector2.new(cx, cy)
+            d.tracer.To      = rs
         else
-            drawings.tracer.Visible = false
+            d.tracer.Visible = false
         end
 
         -- Skeleton
@@ -370,323 +518,190 @@ RunService.RenderStepped:Connect(function()
             for i, pair in ipairs(BONE_PAIRS) do
                 local p1 = char:FindFirstChild(pair[1])
                 local p2 = char:FindFirstChild(pair[2])
-                local bone = drawings.bones[i]
-                if p1 and p2 and bone then
-                    local s1, on1 = worldToScreen(p1.Position)
-                    local s2, on2 = worldToScreen(p2.Position)
-                    bone.Visible = on1 and on2
+                local bone = d.bones[i]
+                if p1 and p2 then
+                    local s1, v1 = toScreen(p1.Position)
+                    local s2, v2 = toScreen(p2.Position)
+                    bone.Visible = v1 and v2
                     bone.From    = s1
                     bone.To      = s2
-                    bone.Color   = beast
-                        and Color3.fromRGB(220,30,30)
-                        or  Color3.fromRGB(30,220,80)
+                    bone.Color   = col
                 else
-                    if bone then bone.Visible = false end
+                    bone.Visible = false
                 end
             end
         else
-            for _, bone in pairs(drawings.bones) do
-                bone.Visible = false
-            end
+            for _, b in ipairs(d.bones) do b.Visible = false end
         end
 
-        -- Chams/Highlight
+        -- Chams
         if cfg.Chams then
-            if not highlights[player] and char then
+            if not highlights[p] then
                 pcall(function()
-                    buildHighlight(player,
-                        beast and Color3.fromRGB(220,30,30)
-                               or Color3.fromRGB(30,220,80),
+                    applyHighlight(p, col,
                         Color3.fromRGB(255,255,255))
                 end)
             end
         else
-            clearHighlight(player)
+            removeHighlight(p)
         end
-
-        ::continue::
     end
 end)
 
-Players.PlayerAdded:Connect(buildPlayerESP)
-Players.PlayerRemoving:Connect(clearPlayerESP)
-for _, p in ipairs(Players:GetPlayers()) do buildPlayerESP(p) end
-
--- ── ESP de Computadores ────────────────────────────────────────
-local compDrawings = {}
-
-local function findComputers()
-    local comps = {}
-    -- nome comum dos computadores em FtF
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("computer")
-        or obj.Name:lower():find("terminal")
-        or obj.Name:lower():find("hack") then
-            if obj:IsA("BasePart") or obj:IsA("Model") then
-                table.insert(comps, obj)
+-- ════════════════════════════════════════════════════════════════
+-- ESP OBJETOS
+-- ════════════════════════════════════════════════════════════════
+local function runObjectESP(enabled, keywords, label, col)
+    if not enabled then return end
+    local objs = scanWorkspace(keywords)
+    local cv   = Camera.ViewportSize
+    for _, obj in ipairs(objs) do
+        local pos = getPartPos(obj)
+        if pos then
+            local sc, vis, dep = toScreen(pos)
+            if vis and dep > 0 then
+                local t = newText(13, col)
+                local l = newLine(col, 1)
+                t.Text     = label .. " " .. distTo(pos) .. "m"
+                t.Position = sc
+                t.Visible  = true
+                l.From     = Vector2.new(cv.X/2, cv.Y)
+                l.To       = sc
+                l.Visible  = true
+                -- auto remove no próximo frame pra evitar acúmulo
+                task.delay(0, function()
+                    pcall(function() t:Remove() end)
+                    pcall(function() l:Remove() end)
+                end)
             end
         end
     end
-    return comps
 end
 
 RunService.RenderStepped:Connect(function()
-    -- limpa drawings antigas
-    for key, d in pairs(compDrawings) do
-        pcall(function() d.label:Remove() end)
-        pcall(function() d.tracer:Remove() end)
-        compDrawings[key] = nil
+    if cfg.ComputerESP then
+        runObjectESP(true,
+            {"computer","terminal","hack"},
+            "COMP", Color3.fromRGB(50,200,255))
     end
-
-    if not cfg.ComputerESP then return end
-
-    for _, comp in ipairs(findComputers()) do
-        local pos = comp:IsA("Model")
-            and comp:GetModelCFrame().Position
-            or  comp.Position
-
-        local screen, onScreen, depth = worldToScreen(pos)
-        if not onScreen or depth < 0 then goto compNext end
-
-        local lbl    = Drawing.new("Text")
-        local tracer = Drawing.new("Line")
-
-        lbl.Text     = cfg.ComputerStatus
-            and "💻 COMP ~" .. math.floor(depth) .. "m"
-            or  "💻 " .. math.floor(depth) .. "m"
-        lbl.Position = screen
-        lbl.Size     = 13
-        lbl.Color    = Color3.fromRGB(50, 200, 255)
-        lbl.Outline  = true
-        lbl.Center   = true
-        lbl.Visible  = true
-
-        tracer.From      = Vector2.new(
-            Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-        tracer.To        = screen
-        tracer.Color     = Color3.fromRGB(50,200,255)
-        tracer.Thickness = 1
-        tracer.Visible   = true
-
-        compDrawings[tostring(comp)] = {label=lbl, tracer=tracer}
-        ::compNext::
+    if cfg.PodESP then
+        runObjectESP(true,
+            {"pod","freeze","crystal"},
+            "POD", Color3.fromRGB(150,220,255))
     end
-end)
-
--- ── ESP de Freeze Pods ─────────────────────────────────────────
-local podDrawings = {}
-
-local function findPods()
-    local pods = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("pod")
-        or obj.Name:lower():find("freeze")
-        or obj.Name:lower():find("crystal") then
-            if obj:IsA("BasePart") or obj:IsA("Model") then
-                table.insert(pods, obj)
-            end
-        end
-    end
-    return pods
-end
-
-RunService.RenderStepped:Connect(function()
-    for key, d in pairs(podDrawings) do
-        pcall(function() d.label:Remove() end)
-        pcall(function() d.tracer:Remove() end)
-        podDrawings[key] = nil
-    end
-
-    if not cfg.PodESP then return end
-
-    for _, pod in ipairs(findPods()) do
-        local pos = pod:IsA("Model")
-            and pod:GetModelCFrame().Position
-            or  pod.Position
-
-        local screen, onScreen, depth = worldToScreen(pos)
-        if not onScreen or depth < 0 then goto podNext end
-
-        local lbl    = Drawing.new("Text")
-        local tracer = Drawing.new("Line")
-
-        lbl.Text     = "❄ POD " .. math.floor(depth) .. "m"
-        lbl.Position = screen
-        lbl.Size     = 13
-        lbl.Color    = Color3.fromRGB(150, 220, 255)
-        lbl.Outline  = true
-        lbl.Center   = true
-        lbl.Visible  = true
-
-        tracer.From      = Vector2.new(
-            Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-        tracer.To        = screen
-        tracer.Color     = Color3.fromRGB(150,220,255)
-        tracer.Thickness = 1
-        tracer.Visible   = true
-
-        podDrawings[tostring(pod)] = {label=lbl, tracer=tracer}
-        ::podNext::
-    end
-end)
-
--- ── ESP de Saídas ──────────────────────────────────────────────
-local exitDrawings = {}
-
-local function findExits()
-    local exits = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("exit")
-        or obj.Name:lower():find("door")
-        or obj.Name:lower():find("escape") then
-            if obj:IsA("BasePart") or obj:IsA("Model") then
-                table.insert(exits, obj)
-            end
-        end
-    end
-    return exits
-end
-
-RunService.RenderStepped:Connect(function()
-    for key, d in pairs(exitDrawings) do
-        pcall(function() d.label:Remove() end)
-        pcall(function() d.tracer:Remove() end)
-        exitDrawings[key] = nil
-    end
-
-    if not cfg.ExitESP then return end
-
-    for _, exit in ipairs(findExits()) do
-        local pos = exit:IsA("Model")
-            and exit:GetModelCFrame().Position
-            or  exit.Position
-
-        local screen, onScreen, depth = worldToScreen(pos)
-        if not onScreen or depth < 0 then goto exitNext end
-
-        local lbl    = Drawing.new("Text")
-        local tracer = Drawing.new("Line")
-
-        lbl.Text     = "🚪 EXIT " .. math.floor(depth) .. "m"
-        lbl.Position = screen
-        lbl.Size     = 13
-        lbl.Color    = Color3.fromRGB(255, 220, 50)
-        lbl.Outline  = true
-        lbl.Center   = true
-        lbl.Visible  = true
-
-        tracer.From      = Vector2.new(
-            Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-        tracer.To        = screen
-        tracer.Color     = Color3.fromRGB(255,220,50)
-        tracer.Thickness = 1
-        tracer.Visible   = true
-
-        exitDrawings[tostring(exit)] = {label=lbl, tracer=tracer}
-        ::exitNext::
+    if cfg.ExitESP then
+        runObjectESP(true,
+            {"exit","door","escape"},
+            "EXIT", Color3.fromRGB(255,220,50))
     end
 end)
 
 -- ── Beast Alert ────────────────────────────────────────────────
-local alertLabel = Drawing.new("Text")
-alertLabel.Size    = 20
-alertLabel.Color   = Color3.fromRGB(255, 50, 50)
-alertLabel.Outline = true
-alertLabel.Center  = true
-alertLabel.Visible = false
+local alertLbl = newText(22, Color3.fromRGB(255,50,50))
 
 RunService.RenderStepped:Connect(function()
     if not cfg.BeastAlert then
-        alertLabel.Visible = false
+        alertLbl.Visible = false
         return
     end
-    local beastClose = false
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and isBeast(p) and isAlive(p) then
-            local r = p.Character
-                and p.Character:FindFirstChild("HumanoidRootPart")
-            local myR = getRootPart()
-            if r and myR then
-                local d = (r.Position - myR.Position).Magnitude
-                if d <= cfg.BeastAlertDist then
-                    beastClose = true
-                end
+    local close = false
+    for _, p in ipairs(getPlayers(true, true, false)) do
+        local r = p.Character
+            and p.Character:FindFirstChild("HumanoidRootPart")
+        local myR = getRoot()
+        if r and myR then
+            if (r.Position - myR.Position).Magnitude
+            <= cfg.BeastAlertDist then
+                close = true
             end
         end
     end
-    alertLabel.Visible  = beastClose
-    alertLabel.Text     = "⚠ BEAST PRÓXIMO ⚠"
-    alertLabel.Position = Vector2.new(
-        Camera.ViewportSize.X / 2, 50)
+    alertLbl.Visible  = close
+    alertLbl.Text     = "!! BEAST PROXIMO !!"
+    alertLbl.Position = Vector2.new(
+        Camera.ViewportSize.X/2, 55)
 end)
 
 -- ════════════════════════════════════════════════════════════════
---  SURVIVOR
+-- SURVIVOR
 -- ════════════════════════════════════════════════════════════════
 
 -- Speed + Lock
 RunService.Heartbeat:Connect(function()
-    local hum = getHumanoid()
+    local hum = getHum()
     if not hum then return end
-    if cfg.Speed or cfg.WalkspeedLock then
+    if cfg.Speed or cfg.WalkLock then
         hum.WalkSpeed = cfg.SpeedVal
     end
 end)
 
--- Infinite Jump
+-- Inf Jump
 UserInput.JumpRequest:Connect(function()
     if not cfg.InfJump then return end
-    local hum = getHumanoid()
-    if hum then hum:ChangeState(
-        Enum.HumanoidStateType.Jumping) end
+    local hum = getHum()
+    if hum then
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
 end)
 
 -- BunnyHop
 RunService.Heartbeat:Connect(function()
     if not cfg.BunnyHop then return end
-    local hum = getHumanoid()
+    local hum = getHum()
     if hum and hum.FloorMaterial ~= Enum.Material.Air then
         hum:ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 
 -- Fly
-local flyConn
+local flyActive = false
+local flyBV, flyBG
+
+local function stopFly()
+    flyActive = false
+    pcall(function() flyBV:Destroy() end)
+    pcall(function() flyBG:Destroy() end)
+    flyBV = nil; flyBG = nil
+end
+
 local function startFly()
-    local char = getChar()
-    if not char then return end
-    local root = getRootPart()
+    stopFly()
+    local root = getRoot()
     if not root then return end
-    local bp = Instance.new("BodyVelocity")
-    bp.Velocity        = Vector3.zero
-    bp.MaxForce        = Vector3.new(1e5,1e5,1e5)
-    bp.Parent          = root
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque       = Vector3.new(1e5,1e5,1e5)
-    bg.CFrame          = root.CFrame
-    bg.Parent          = root
-    flyConn = RunService.Heartbeat:Connect(function()
-        if not cfg.Fly then
-            bp:Destroy(); bg:Destroy()
-            if flyConn then flyConn:Disconnect() end
-            return
+    flyActive = true
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.MaxForce  = Vector3.new(1e6,1e6,1e6)
+    flyBV.Velocity  = Vector3.zero
+    flyBV.Parent    = root
+    flyBG = Instance.new("BodyGyro")
+    flyBG.MaxTorque = Vector3.new(1e6,1e6,1e6)
+    flyBG.CFrame    = root.CFrame
+    flyBG.Parent    = root
+
+    RunService.Heartbeat:Connect(function()
+        if not cfg.Fly or not flyActive then
+            stopFly(); return
         end
+        if not flyBV or not flyBV.Parent then return end
         local dir = Vector3.zero
         local cf  = Camera.CFrame
+        local spd = cfg.FlySpeed
         if UserInput:IsKeyDown(Enum.KeyCode.W) then
-            dir = dir + cf.LookVector end
+            dir += cf.LookVector end
         if UserInput:IsKeyDown(Enum.KeyCode.S) then
-            dir = dir - cf.LookVector end
+            dir -= cf.LookVector end
         if UserInput:IsKeyDown(Enum.KeyCode.A) then
-            dir = dir - cf.RightVector end
+            dir -= cf.RightVector end
         if UserInput:IsKeyDown(Enum.KeyCode.D) then
-            dir = dir + cf.RightVector end
+            dir += cf.RightVector end
         if UserInput:IsKeyDown(Enum.KeyCode.Space) then
-            dir = dir + Vector3.new(0,1,0) end
+            dir += Vector3.yAxis end
         if UserInput:IsKeyDown(Enum.KeyCode.LeftControl) then
-            dir = dir - Vector3.new(0,1,0) end
-        bp.Velocity = dir * cfg.SpeedVal
-        bg.CFrame   = cf
+            dir -= Vector3.yAxis end
+        flyBV.Velocity = dir.Magnitude > 0
+            and dir.Unit * spd
+            or  Vector3.zero
+        flyBG.CFrame = cf
     end)
 end
 
@@ -705,9 +720,8 @@ end)
 -- No Crawl
 RunService.Heartbeat:Connect(function()
     if not cfg.NoCrawl then return end
-    local hum = getHumanoid()
-    if hum and hum:GetState() ==
-    Enum.HumanoidStateType.Physics then
+    local hum = getHum()
+    if hum and hum:GetState() == Enum.HumanoidStateType.Physics then
         hum:ChangeState(Enum.HumanoidStateType.Running)
     end
 end)
@@ -717,11 +731,11 @@ RunService.Heartbeat:Connect(function()
     if not cfg.InfStamina then return end
     local char = getChar()
     if not char then return end
-    local stamina = char:FindFirstChild("Stamina")
-        or char:FindFirstChild("StaminaValue")
-    if stamina and stamina:IsA("NumberValue") then
-        stamina.Value = stamina.Value > 0
-            and stamina.Value or 100
+    for _, v in ipairs(char:GetDescendants()) do
+        if v.Name:lower():find("stamina")
+        and v:IsA("NumberValue") then
+            if v.Value < 10 then v.Value = 100 end
+        end
     end
 end)
 
@@ -730,79 +744,92 @@ RunService.Heartbeat:Connect(function()
     if not cfg.AntiFreeze then return end
     local char = getChar()
     if not char then return end
-    local frozen = char:FindFirstChild("Frozen")
-        or char:FindFirstChild("IsFrozen")
-    if frozen then frozen:Destroy() end
+    for _, n in ipairs({"Frozen","IsFrozen","Freeze","Crystalized"}) do
+        local v = char:FindFirstChild(n)
+        if v then
+            pcall(function() v:Destroy() end)
+        end
+    end
 end)
 
--- No Fail Hack / Instant Hack
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args   = {...}
-
-    if cfg.NoFailHack and method == "FireServer" then
-        -- intercepta evento de falha no minigame
-        local name = tostring(self)
-        if name:lower():find("fail") or name:lower():find("error") then
-            return
+-- Ghost Mode
+RunService.Heartbeat:Connect(function()
+    if not cfg.GhostMode then return end
+    local char = getChar()
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.LocalTransparencyModifier = 1
         end
     end
+end)
 
-    if cfg.InstantHack and method == "FireServer" then
-        local name = tostring(self)
-        if name:lower():find("hack") or name:lower():find("computer") then
-            -- força sucesso imediato
-            args[1] = true
+-- No Fail / Instant Hack via hook
+local ncOk, oldNC = pcall(function()
+    return hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        local args   = {...}
+        local selfName = tostring(self):lower()
+
+        if cfg.NoFailHack and method == "FireServer" then
+            if selfName:find("fail") or selfName:find("error")
+            or selfName:find("mistake") then
+                return
+            end
         end
-    end
 
-    return oldNamecall(self, table.unpack(args))
+        if cfg.InstantHack and method == "FireServer" then
+            if selfName:find("hack") or selfName:find("computer")
+            or selfName:find("progress") then
+                args[1] = true
+            end
+        end
+
+        if cfg.BeastNoCD and method == "FireServer" then
+            if selfName:find("cooldown") or selfName:find("attack") then
+                return oldNC(self, table.unpack(args))
+            end
+        end
+
+        return oldNC(self, table.unpack(args))
+    end)
 end)
 
 -- Auto Hack
 RunService.Heartbeat:Connect(function()
     if not cfg.AutoHack then return end
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("computer")
-        or obj.Name:lower():find("terminal") then
-            local root = getRootPart()
-            local part = obj:IsA("Model")
-                and obj:FindFirstChildOfClass("BasePart")
-                or  (obj:IsA("BasePart") and obj or nil)
-            if part and root then
-                local dist = (part.Position - root.Position).Magnitude
-                if dist < 10 then
-                    -- tenta interagir via ProximityPrompt
-                    local pp = obj:FindFirstChildOfClass("ProximityPrompt")
-                        or part:FindFirstChildOfClass("ProximityPrompt")
-                    if pp then
-                        fireproximityprompt(pp)
-                    end
-                end
+    local root = getRoot()
+    if not root then return end
+    local comps = scanWorkspace({"computer","terminal","hack"})
+    for _, obj in ipairs(comps) do
+        local pos = getPartPos(obj)
+        if pos and (pos - root.Position).Magnitude < 12 then
+            local pp = obj:FindFirstChildOfClass("ProximityPrompt")
+            if pp then
+                pcall(function() fireproximityprompt(pp) end)
             end
         end
     end
 end)
 
--- Auto Free survivors congelados
+-- Auto Free
 RunService.Heartbeat:Connect(function()
     if not cfg.AutoFree then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and isFrozen(p) then
-            local c = p.Character
-            local root = getRootPart()
-            if c and root then
-                local fr = c:FindFirstChild("HumanoidRootPart")
-                if fr then
-                    local dist = (fr.Position - root.Position).Magnitude
-                    if dist < 10 then
-                        local pp = c:FindFirstChildOfClass("ProximityPrompt")
-                        if pp then fireproximityprompt(pp) end
-                    else
-                        -- teleporta perto
-                        root.CFrame = CFrame.new(
-                            fr.Position + Vector3.new(2,0,2))
+    local root = getRoot()
+    if not root then return end
+    for _, p in ipairs(getPlayers(true, false, true)) do
+        if isFrozen(p) and p.Character then
+            local fr = p.Character:FindFirstChild("HumanoidRootPart")
+            if fr then
+                local dist = (fr.Position - root.Position).Magnitude
+                if dist > 12 then
+                    root.CFrame = CFrame.new(
+                        fr.Position + Vector3.new(2, 0, 2))
+                else
+                    local pp = p.Character:FindFirstChildOfClass(
+                        "ProximityPrompt")
+                    if pp then
+                        pcall(function() fireproximityprompt(pp) end)
                     end
                 end
             end
@@ -813,170 +840,166 @@ end)
 -- Auto Dodge
 RunService.Heartbeat:Connect(function()
     if not cfg.AutoDodge then return end
-    local root = getRootPart()
+    local root = getRoot()
     if not root then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and isBeast(p) and isAlive(p) then
-            local br = p.Character
-                and p.Character:FindFirstChild("HumanoidRootPart")
-            if br then
-                local dist = (br.Position - root.Position).Magnitude
-                if dist < cfg.AutoDodgeDist then
-                    -- foge na direção oposta
-                    local away = (root.Position - br.Position).Unit
-                    root.CFrame = root.CFrame
-                        + away * 15
-                end
+    for _, p in ipairs(getPlayers(true, true, false)) do
+        local br = p.Character
+            and p.Character:FindFirstChild("HumanoidRootPart")
+        if br then
+            local dist = (br.Position - root.Position).Magnitude
+            if dist < cfg.AutoDodgeDist then
+                local away = (root.Position - br.Position).Unit
+                root.CFrame = CFrame.new(
+                    root.Position + away * 20)
             end
         end
     end
 end)
 
--- Computer Finder
-local function teleportToNearestComp()
-    local root = getRootPart()
-    if not root then return end
-    local nearest, dist = nil, math.huge
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("computer")
-        or obj.Name:lower():find("terminal") then
-            local part = obj:IsA("Model")
-                and obj:FindFirstChildOfClass("BasePart")
-                or  (obj:IsA("BasePart") and obj or nil)
-            if part then
-                local d = (part.Position - root.Position).Magnitude
-                if d < dist then dist = d; nearest = part end
-            end
-        end
+-- Fake Lag
+local fakeLagActive = false
+RunService.Heartbeat:Connect(function()
+    if not cfg.FakeLag then
+        fakeLagActive = false
+        return
     end
-    if nearest then
-        root.CFrame = CFrame.new(
-            nearest.Position + Vector3.new(0,3,3))
+    if not fakeLagActive then
+        fakeLagActive = true
+        task.spawn(function()
+            while cfg.FakeLag do
+                task.wait(cfg.FakeLagVal / 1000)
+            end
+            fakeLagActive = false
+        end)
+    end
+end)
+
+-- Teleports (botões)
+local function tpToComp()
+    local root = getRoot()
+    if not root then return end
+    local objs = scanWorkspace({"computer","terminal"})
+    local best = findNearest(objs, getPartPos)
+    if best then
+        local pos = getPartPos(best)
+        if pos then
+            root.CFrame = CFrame.new(pos + Vector3.new(0,3,3))
+        end
     end
 end
 
--- Pod Finder
-local function teleportToNearestPod()
-    local root = getRootPart()
+local function tpToPod()
+    local root = getRoot()
     if not root then return end
-    local nearest, dist = nil, math.huge
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("pod")
-        or obj.Name:lower():find("freeze") then
-            local part = obj:IsA("Model")
-                and obj:FindFirstChildOfClass("BasePart")
-                or  (obj:IsA("BasePart") and obj or nil)
-            if part then
-                local d = (part.Position - root.Position).Magnitude
-                if d < dist then dist = d; nearest = part end
-            end
+    local objs = scanWorkspace({"pod","freeze","crystal"})
+    local best = findNearest(objs, getPartPos)
+    if best then
+        local pos = getPartPos(best)
+        if pos then
+            root.CFrame = CFrame.new(pos + Vector3.new(0,3,3))
         end
-    end
-    if nearest then
-        root.CFrame = CFrame.new(
-            nearest.Position + Vector3.new(0,3,3))
     end
 end
 
--- Exit Finder
-local function teleportToExit()
-    local root = getRootPart()
+local function tpToExit()
+    local root = getRoot()
     if not root then return end
-    local nearest, dist = nil, math.huge
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("exit")
-        or obj.Name:lower():find("door") then
-            local part = obj:IsA("Model")
-                and obj:FindFirstChildOfClass("BasePart")
-                or  (obj:IsA("BasePart") and obj or nil)
-            if part then
-                local d = (part.Position - root.Position).Magnitude
-                if d < dist then dist = d; nearest = part end
-            end
+    local objs = scanWorkspace({"exit","door","escape"})
+    local best = findNearest(objs, getPartPos)
+    if best then
+        local pos = getPartPos(best)
+        if pos then
+            root.CFrame = CFrame.new(pos + Vector3.new(0,3,3))
         end
-    end
-    if nearest then
-        root.CFrame = CFrame.new(
-            nearest.Position + Vector3.new(0,3,3))
     end
 end
 
 -- ════════════════════════════════════════════════════════════════
---  BEAST
+-- BEAST
 -- ════════════════════════════════════════════════════════════════
 
--- Beast Speed
-RunService.Heartbeat:Connect(function()
-    if not cfg.BeastSpeed then return end
-    if not isBeast(LocalPlayer) then return end
-    local hum = getHumanoid()
-    if hum then hum.WalkSpeed = cfg.BeastSpeedVal end
-end)
-
--- Beast Auto Freeze / Teleport to Survivor
 RunService.Heartbeat:Connect(function()
     if not isBeast(LocalPlayer) then return end
-    local root = getRootPart()
+    local root = getRoot()
     if not root then return end
+    local hum = getHum()
 
-    local nearest, dist = nil, math.huge
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and isAlive(p) and not isBeast(p) then
-            local r = p.Character
-                and p.Character:FindFirstChild("HumanoidRootPart")
-            if r then
-                local d = (r.Position - root.Position).Magnitude
-                if d < dist then dist = d; nearest = {p=p, r=r} end
+    if cfg.BeastSpeed and hum then
+        hum.WalkSpeed = cfg.BeastSpeedVal
+    end
+
+    local survivors = getPlayers(true, false, true)
+    local nearest = findNearest(survivors, function(p)
+        local r = p.Character
+            and p.Character:FindFirstChild("HumanoidRootPart")
+        return r and r.Position or nil
+    end)
+
+    if not nearest then return end
+    local nr = nearest.Character
+        and nearest.Character:FindFirstChild("HumanoidRootPart")
+    if not nr then return end
+
+    local dist = (nr.Position - root.Position).Magnitude
+
+    if cfg.BeastTeleport then
+        root.CFrame = CFrame.new(
+            nr.Position + Vector3.new(0, 3, 3))
+    end
+
+    if cfg.BeastKillAura and dist <= cfg.BeastAuraRange then
+        local tool = getChar()
+            and getChar():FindFirstChildOfClass("Tool")
+        if tool then
+            local pp = nearest.Character
+                :FindFirstChildOfClass("ProximityPrompt")
+            if pp then
+                pcall(function() fireproximityprompt(pp) end)
             end
         end
     end
 
-    if nearest then
-        if cfg.BeastTeleport then
-            root.CFrame = CFrame.new(
-                nearest.r.Position + Vector3.new(0,3,2))
+    if cfg.BeastAutoFreeze and dist < 8 then
+        local pp = nearest.Character
+            :FindFirstChildOfClass("ProximityPrompt")
+        if pp then
+            pcall(function() fireproximityprompt(pp) end)
         end
-        if cfg.BeastAutoFreeze and dist < 8 then
-            -- tenta acertar via click/touch
-            local tool = getChar()
-                and getChar():FindFirstChildOfClass("Tool")
-            if tool then
-                local pp = tool:FindFirstChildOfClass("ProximityPrompt")
-                    or nearest.p.Character
-                        :FindFirstChildOfClass("ProximityPrompt")
-                if pp then fireproximityprompt(pp) end
-            end
-        end
-        if cfg.BeastFreezeAll then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and isAlive(p) and not isBeast(p) then
-                    local r2 = p.Character
-                        and p.Character:FindFirstChild("HumanoidRootPart")
-                    if r2 then
-                        root.CFrame = CFrame.new(
-                            r2.Position + Vector3.new(0,3,2))
-                    end
+    end
+
+    if cfg.BeastFreezeAll then
+        for _, p in ipairs(survivors) do
+            local pr = p.Character
+                and p.Character:FindFirstChild("HumanoidRootPart")
+            if pr then
+                root.CFrame = CFrame.new(
+                    pr.Position + Vector3.new(0,3,2))
+                local pp = p.Character
+                    :FindFirstChildOfClass("ProximityPrompt")
+                if pp then
+                    pcall(function() fireproximityprompt(pp) end)
                 end
+                task.wait(0.1)
             end
         end
     end
 end)
 
--- Beast Fling
-local function flingTarget(target)
-    local r = target.Character
-        and target.Character:FindFirstChild("HumanoidRootPart")
+local function flingPlayer(p)
+    local r = p.Character
+        and p.Character:FindFirstChild("HumanoidRootPart")
     if not r then return end
     local bv = Instance.new("BodyVelocity")
-    bv.Velocity  = Vector3.new(
-        math.random(-200,200), 300, math.random(-200,200))
-    bv.MaxForce  = Vector3.new(1e6,1e6,1e6)
-    bv.Parent    = r
-    game:GetService("Debris"):AddItem(bv, 0.2)
+    bv.Velocity = Vector3.new(
+        math.random(-300,300), 500,
+        math.random(-300,300))
+    bv.MaxForce = Vector3.new(1e7,1e7,1e7)
+    bv.Parent   = r
+    Debris:AddItem(bv, 0.15)
 end
 
 -- ════════════════════════════════════════════════════════════════
---  MISC
+-- MISC
 -- ════════════════════════════════════════════════════════════════
 
 -- Anti-AFK
@@ -984,37 +1007,21 @@ task.spawn(function()
     while true do
         task.wait(55)
         if cfg.AntiAFK then
-            local vu = game:GetService("VirtualUser")
-            vu:Button2Down(Vector2.zero, Camera.CFrame)
-            task.wait(0.1)
-            vu:Button2Up(Vector2.zero, Camera.CFrame)
-        end
-    end
-end)
-
--- Chat Spammer
-task.spawn(function()
-    while true do
-        task.wait(cfg.ChatDelay)
-        if cfg.ChatSpammer then
             pcall(function()
-                game:GetService("ReplicatedStorage")
-                    :WaitForChild("DefaultChatSystemChatEvents")
-                    :WaitForChild("SayMessageRequest")
-                    :FireServer(cfg.ChatMsg, "All")
+                VirtualUser:Button2Down(
+                    Vector2.zero, Camera.CFrame)
+                task.wait(0.1)
+                VirtualUser:Button2Up(
+                    Vector2.zero, Camera.CFrame)
             end)
         end
     end
 end)
 
 -- Stats HUD
-local stats = {hacks=0, frees=0, frozen=0, escaped=0}
-local statsLbl = Drawing.new("Text")
-statsLbl.Size    = 13
-statsLbl.Color   = Color3.fromRGB(255,255,255)
-statsLbl.Outline = true
-statsLbl.Center  = false
-statsLbl.Visible = false
+local stats = {hacks=0,frees=0,frozen=0,escaped=0,rounds=0}
+local statsLbl = newText(13, Color3.fromRGB(255,255,255))
+statsLbl.Center = false
 
 RunService.RenderStepped:Connect(function()
     statsLbl.Visible  = cfg.StatsHUD
@@ -1026,289 +1033,202 @@ end)
 
 -- Flashlight
 local flashPart
-local function toggleFlashlight(on)
-    local char = getChar()
-    if not char then return end
+local function setFlashlight(on)
     if on then
         if flashPart then return end
-        local root = getRootPart()
+        local root = getRoot()
         if not root then return end
         flashPart = Instance.new("Part")
         flashPart.Size        = Vector3.new(0.1,0.1,0.1)
         flashPart.CanCollide  = false
         flashPart.Anchored    = false
         flashPart.Transparency = 1
-        local light = Instance.new("SpotLight")
-        light.Range      = 60
-        light.Brightness = 5
-        light.Angle      = 70
-        light.Parent     = flashPart
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0   = root
-        weld.Part1   = flashPart
-        weld.Parent  = flashPart
-        flashPart.Parent = char
+        local sl = Instance.new("SpotLight")
+        sl.Range      = 80
+        sl.Brightness = 6
+        sl.Angle      = 80
+        sl.Parent     = flashPart
+        local wc = Instance.new("WeldConstraint")
+        wc.Part0   = root
+        wc.Part1   = flashPart
+        wc.Parent  = flashPart
+        flashPart.Parent = getChar()
     else
         if flashPart then
-            flashPart:Destroy()
+            pcall(function() flashPart:Destroy() end)
             flashPart = nil
         end
     end
 end
 
+-- Chat Spammer
+task.spawn(function()
+    while true do
+        task.wait(math.max(cfg.ChatDelay, 1))
+        if cfg.ChatSpammer then
+            pcall(function()
+                ReplicatedSto
+                    :WaitForChild("DefaultChatSystemChatEvents")
+                    :WaitForChild("SayMessageRequest")
+                    :FireServer(cfg.ChatMsg, "All")
+            end)
+        end
+    end
+end)
+
+-- Crosshair
+local crossParts = {
+    newLine(Color3.fromRGB(255,50,50), 2),
+    newLine(Color3.fromRGB(255,50,50), 2),
+    newLine(Color3.fromRGB(255,50,50), 2),
+    newLine(Color3.fromRGB(255,50,50), 2),
+}
+
+RunService.RenderStepped:Connect(function()
+    local cv = Camera.ViewportSize
+    local cx, cy = cv.X/2, cv.Y/2
+    local defs = {
+        {Vector2.new(cx-12,cy), Vector2.new(cx-4,cy)},
+        {Vector2.new(cx+4,cy),  Vector2.new(cx+12,cy)},
+        {Vector2.new(cx,cy-12), Vector2.new(cx,cy-4)},
+        {Vector2.new(cx,cy+4),  Vector2.new(cx,cy+12)},
+    }
+    for i, ln in ipairs(crossParts) do
+        ln.Visible = cfg.CrosshairCustom
+        ln.Color   = cfg.CrosshairCol
+        ln.From    = defs[i][1]
+        ln.To      = defs[i][2]
+    end
+end)
+
 -- Rejoin
 local function rejoin()
-    game:GetService("TeleportService")
-        :Teleport(game.PlaceId, LocalPlayer)
-end
-
--- Server Hop
-local function serverHop()
-    local servers = game:GetService("HttpService")
-    -- lista servidores via API Roblox
-    -- FILL: requer HttpService habilitado no executor
-    rejoin() -- fallback simples
+    pcall(function()
+        TeleportSvc:Teleport(game.PlaceId, LocalPlayer)
+    end)
 end
 
 -- ════════════════════════════════════════════════════════════════
---  RAYFIELD UI
+-- RAYFIELD UI
 -- ════════════════════════════════════════════════════════════════
 local Window = Rayfield:CreateWindow({
-    Name            = "olliE | Flee The Facility",
-    LoadingTitle    = "olliE carregando...",
-    LoadingSubtitle = "absolute olliE",
+    Name             = "olliE | Flee The Facility",
+    LoadingTitle     = "olliE v2 carregando...",
+    LoadingSubtitle  = "absolute olliE — gng",
+    Icon             = "skull",
     ConfigurationSaving = {
         Enabled  = true,
-        FileName = "OllieFTF"
+        FileName = "OllieFTF_v2"
     },
     KeySystem = false,
 })
 
 -- ── ABA: ESP ──────────────────────────────────────────────────
-local TabESP = Window:CreateTab("ESP", "eye")
+local ESP = Window:CreateTab("ESP", "eye")
 
-TabESP:CreateToggle({ Name = "Survivor ESP",
-    CurrentValue = cfg.SurvivorESP, Flag = "SurvivorESP",
-    Callback = function(v) cfg.SurvivorESP = v end })
+ESP:CreateSection("Jogadores")
+ESP:CreateToggle({Name="Survivor ESP",CurrentValue=cfg.SurvivorESP,Flag="SurvivorESP",Callback=function(v)cfg.SurvivorESP=v end})
+ESP:CreateToggle({Name="Beast ESP",CurrentValue=cfg.BeastESP,Flag="BeastESP",Callback=function(v)cfg.BeastESP=v end})
+ESP:CreateToggle({Name="Box",CurrentValue=cfg.ESPBox,Flag="ESPBox",Callback=function(v)cfg.ESPBox=v end})
+ESP:CreateToggle({Name="Nome",CurrentValue=cfg.ESPName,Flag="ESPName",Callback=function(v)cfg.ESPName=v end})
+ESP:CreateToggle({Name="Distância",CurrentValue=cfg.ESPDist,Flag="ESPDist",Callback=function(v)cfg.ESPDist=v end})
+ESP:CreateToggle({Name="Status",CurrentValue=cfg.ESPStatus,Flag="ESPStatus",Callback=function(v)cfg.ESPStatus=v end})
+ESP:CreateToggle({Name="HP Bar",CurrentValue=cfg.ESPHealth,Flag="ESPHealth",Callback=function(v)cfg.ESPHealth=v end})
+ESP:CreateToggle({Name="Skeleton",CurrentValue=cfg.SkeletonESP,Flag="SkeletonESP",Callback=function(v)cfg.SkeletonESP=v end})
+ESP:CreateToggle({Name="Chams (Parede)",CurrentValue=cfg.Chams,Flag="Chams",Callback=function(v)cfg.Chams=v end})
+ESP:CreateToggle({Name="Tracers",CurrentValue=cfg.Tracers,Flag="Tracers",Callback=function(v)cfg.Tracers=v end})
 
-TabESP:CreateToggle({ Name = "Beast ESP",
-    CurrentValue = cfg.BeastESP, Flag = "BeastESP",
-    Callback = function(v) cfg.BeastESP = v end })
+ESP:CreateSection("Objetos")
+ESP:CreateToggle({Name="Computer ESP",CurrentValue=cfg.ComputerESP,Flag="ComputerESP",Callback=function(v)cfg.ComputerESP=v end})
+ESP:CreateToggle({Name="Computer Status %",CurrentValue=cfg.ComputerStatus,Flag="ComputerStatus",Callback=function(v)cfg.ComputerStatus=v end})
+ESP:CreateToggle({Name="Freeze Pod ESP",CurrentValue=cfg.PodESP,Flag="PodESP",Callback=function(v)cfg.PodESP=v end})
+ESP:CreateToggle({Name="Exit Door ESP",CurrentValue=cfg.ExitESP,Flag="ExitESP",Callback=function(v)cfg.ExitESP=v end})
 
-TabESP:CreateToggle({ Name = "Computer ESP",
-    CurrentValue = cfg.ComputerESP, Flag = "ComputerESP",
-    Callback = function(v) cfg.ComputerESP = v end })
-
-TabESP:CreateToggle({ Name = "Computer Status %",
-    CurrentValue = cfg.ComputerStatus, Flag = "ComputerStatus",
-    Callback = function(v) cfg.ComputerStatus = v end })
-
-TabESP:CreateToggle({ Name = "Freeze Pod ESP",
-    CurrentValue = cfg.PodESP, Flag = "PodESP",
-    Callback = function(v) cfg.PodESP = v end })
-
-TabESP:CreateToggle({ Name = "Exit Door ESP",
-    CurrentValue = cfg.ExitESP, Flag = "ExitESP",
-    Callback = function(v) cfg.ExitESP = v end })
-
-TabESP:CreateToggle({ Name = "Chams (Parede)",
-    CurrentValue = cfg.Chams, Flag = "Chams",
-    Callback = function(v) cfg.Chams = v end })
-
-TabESP:CreateToggle({ Name = "Tracers",
-    CurrentValue = cfg.Tracers, Flag = "Tracers",
-    Callback = function(v) cfg.Tracers = v end })
-
-TabESP:CreateToggle({ Name = "Skeleton ESP",
-    CurrentValue = cfg.SkeletonESP, Flag = "SkeletonESP",
-    Callback = function(v) cfg.SkeletonESP = v end })
-
-TabESP:CreateToggle({ Name = "Nametags",
-    CurrentValue = cfg.NametagESP, Flag = "NametagESP",
-    Callback = function(v) cfg.NametagESP = v end })
-
-TabESP:CreateToggle({ Name = "Distância",
-    CurrentValue = cfg.DistanceESP, Flag = "DistanceESP",
-    Callback = function(v) cfg.DistanceESP = v end })
-
-TabESP:CreateToggle({ Name = "Status (Frozen/Hacking)",
-    CurrentValue = cfg.StatusESP, Flag = "StatusESP",
-    Callback = function(v) cfg.StatusESP = v end })
-
-TabESP:CreateToggle({ Name = "Beast Alert",
-    CurrentValue = cfg.BeastAlert, Flag = "BeastAlert",
-    Callback = function(v) cfg.BeastAlert = v end })
-
-TabESP:CreateSlider({ Name = "Distância do Alert",
-    Range = {10,150}, Increment = 5,
-    CurrentValue = cfg.BeastAlertDist, Flag = "BeastAlertDist",
-    Callback = function(v) cfg.BeastAlertDist = v end })
+ESP:CreateSection("Alertas")
+ESP:CreateToggle({Name="Beast Alert",CurrentValue=cfg.BeastAlert,Flag="BeastAlert",Callback=function(v)cfg.BeastAlert=v end})
+ESP:CreateSlider({Name="Distância do Alert",Range={10,150},Increment=5,CurrentValue=cfg.BeastAlertDist,Flag="BeastAlertDist",Callback=function(v)cfg.BeastAlertDist=v end})
 
 -- ── ABA: SURVIVOR ─────────────────────────────────────────────
-local TabSurv = Window:CreateTab("Survivor", "user")
+local SRV = Window:CreateTab("Survivor", "user")
 
-TabSurv:CreateToggle({ Name = "Speed",
-    CurrentValue = cfg.Speed, Flag = "Speed",
-    Callback = function(v) cfg.Speed = v end })
+SRV:CreateSection("Movimento")
+SRV:CreateToggle({Name="Speed",CurrentValue=cfg.Speed,Flag="Speed",Callback=function(v)cfg.Speed=v end})
+SRV:CreateSlider({Name="Velocidade",Range={16,150},Increment=2,CurrentValue=cfg.SpeedVal,Flag="SpeedVal",Callback=function(v)cfg.SpeedVal=v end})
+SRV:CreateToggle({Name="Walkspeed Lock",CurrentValue=cfg.WalkLock,Flag="WalkLock",Callback=function(v)cfg.WalkLock=v end})
+SRV:CreateToggle({Name="Infinite Jump",CurrentValue=cfg.InfJump,Flag="InfJump",Callback=function(v)cfg.InfJump=v end})
+SRV:CreateToggle({Name="Bunny Hop",CurrentValue=cfg.BunnyHop,Flag="BunnyHop",Callback=function(v)cfg.BunnyHop=v end})
+SRV:CreateToggle({Name="Fly",CurrentValue=cfg.Fly,Flag="Fly",Callback=function(v)cfg.Fly=v;if v then startFly() else stopFly() end end})
+SRV:CreateSlider({Name="Fly Speed",Range={10,150},Increment=2,CurrentValue=cfg.FlySpeed,Flag="FlySpeed",Callback=function(v)cfg.FlySpeed=v end})
+SRV:CreateToggle({Name="NoClip",CurrentValue=cfg.NoClip,Flag="NoClip",Callback=function(v)cfg.NoClip=v end})
+SRV:CreateToggle({Name="No Crawl",CurrentValue=cfg.NoCrawl,Flag="NoCrawl",Callback=function(v)cfg.NoCrawl=v end})
+SRV:CreateToggle({Name="Ghost Mode",CurrentValue=cfg.GhostMode,Flag="GhostMode",Callback=function(v)cfg.GhostMode=v end})
 
-TabSurv:CreateSlider({ Name = "Velocidade",
-    Range = {16,120}, Increment = 2,
-    CurrentValue = cfg.SpeedVal, Flag = "SpeedVal",
-    Callback = function(v) cfg.SpeedVal = v end })
+SRV:CreateSection("Gameplay")
+SRV:CreateToggle({Name="Inf Stamina",CurrentValue=cfg.InfStamina,Flag="InfStamina",Callback=function(v)cfg.InfStamina=v end})
+SRV:CreateToggle({Name="Anti Freeze",CurrentValue=cfg.AntiFreeze,Flag="AntiFreeze",Callback=function(v)cfg.AntiFreeze=v end})
+SRV:CreateToggle({Name="No Fail Hack",CurrentValue=cfg.NoFailHack,Flag="NoFailHack",Callback=function(v)cfg.NoFailHack=v end})
+SRV:CreateToggle({Name="Instant Hack",CurrentValue=cfg.InstantHack,Flag="InstantHack",Callback=function(v)cfg.InstantHack=v end})
+SRV:CreateToggle({Name="Auto Hack",CurrentValue=cfg.AutoHack,Flag="AutoHack",Callback=function(v)cfg.AutoHack=v end})
+SRV:CreateToggle({Name="Auto Free Survivors",CurrentValue=cfg.AutoFree,Flag="AutoFree",Callback=function(v)cfg.AutoFree=v end})
+SRV:CreateToggle({Name="Auto Dodge Beast",CurrentValue=cfg.AutoDodge,Flag="AutoDodge",Callback=function(v)cfg.AutoDodge=v end})
+SRV:CreateSlider({Name="Dodge Distance",Range={10,100},Increment=5,CurrentValue=cfg.AutoDodgeDist,Flag="AutoDodgeDist",Callback=function(v)cfg.AutoDodgeDist=v end})
+SRV:CreateToggle({Name="Fake Lag",CurrentValue=cfg.FakeLag,Flag="FakeLag",Callback=function(v)cfg.FakeLag=v end})
+SRV:CreateSlider({Name="Lag (ms)",Range={50,500},Increment=50,CurrentValue=cfg.FakeLagVal,Flag="FakeLagVal",Callback=function(v)cfg.FakeLagVal=v end})
 
-TabSurv:CreateToggle({ Name = "Walkspeed Lock",
-    CurrentValue = cfg.WalkspeedLock, Flag = "WalkspeedLock",
-    Callback = function(v) cfg.WalkspeedLock = v end })
-
-TabSurv:CreateToggle({ Name = "Infinite Jump",
-    CurrentValue = cfg.InfJump, Flag = "InfJump",
-    Callback = function(v) cfg.InfJump = v end })
-
-TabSurv:CreateToggle({ Name = "Bunny Hop",
-    CurrentValue = cfg.BunnyHop, Flag = "BunnyHop",
-    Callback = function(v) cfg.BunnyHop = v end })
-
-TabSurv:CreateToggle({ Name = "Fly",
-    CurrentValue = cfg.Fly, Flag = "Fly",
-    Callback = function(v)
-        cfg.Fly = v
-        if v then startFly() end
-    end })
-
-TabSurv:CreateToggle({ Name = "NoClip",
-    CurrentValue = cfg.NoClip, Flag = "NoClip",
-    Callback = function(v) cfg.NoClip = v end })
-
-TabSurv:CreateToggle({ Name = "No Crawl",
-    CurrentValue = cfg.NoCrawl, Flag = "NoCrawl",
-    Callback = function(v) cfg.NoCrawl = v end })
-
-TabSurv:CreateToggle({ Name = "Inf Stamina",
-    CurrentValue = cfg.InfStamina, Flag = "InfStamina",
-    Callback = function(v) cfg.InfStamina = v end })
-
-TabSurv:CreateToggle({ Name = "Anti Freeze",
-    CurrentValue = cfg.AntiFreeze, Flag = "AntiFreeze",
-    Callback = function(v) cfg.AntiFreeze = v end })
-
-TabSurv:CreateToggle({ Name = "No Fail Hack",
-    CurrentValue = cfg.NoFailHack, Flag = "NoFailHack",
-    Callback = function(v) cfg.NoFailHack = v end })
-
-TabSurv:CreateToggle({ Name = "Instant Hack",
-    CurrentValue = cfg.InstantHack, Flag = "InstantHack",
-    Callback = function(v) cfg.InstantHack = v end })
-
-TabSurv:CreateToggle({ Name = "Auto Hack",
-    CurrentValue = cfg.AutoHack, Flag = "AutoHack",
-    Callback = function(v) cfg.AutoHack = v end })
-
-TabSurv:CreateToggle({ Name = "Auto Free Survivors",
-    CurrentValue = cfg.AutoFree, Flag = "AutoFree",
-    Callback = function(v) cfg.AutoFree = v end })
-
-TabSurv:CreateToggle({ Name = "Auto Dodge Beast",
-    CurrentValue = cfg.AutoDodge, Flag = "AutoDodge",
-    Callback = function(v) cfg.AutoDodge = v end })
-
-TabSurv:CreateSlider({ Name = "Dodge Distance",
-    Range = {10,100}, Increment = 5,
-    CurrentValue = cfg.AutoDodgeDist, Flag = "AutoDodgeDist",
-    Callback = function(v) cfg.AutoDodgeDist = v end })
-
-TabSurv:CreateButton({ Name = "Teleport → Computer",
-    Callback = teleportToNearestComp })
-
-TabSurv:CreateButton({ Name = "Teleport → Pod",
-    Callback = teleportToNearestPod })
-
-TabSurv:CreateButton({ Name = "Teleport → Exit",
-    Callback = teleportToExit })
+SRV:CreateSection("Teleportes")
+SRV:CreateButton({Name="TP → Computer",Callback=tpToComp})
+SRV:CreateButton({Name="TP → Pod",Callback=tpToPod})
+SRV:CreateButton({Name="TP → Exit",Callback=tpToExit})
 
 -- ── ABA: BEAST ────────────────────────────────────────────────
-local TabBeast = Window:CreateTab("Beast", "skull")
+local BST = Window:CreateTab("Beast", "skull")
 
-TabBeast:CreateToggle({ Name = "Beast Speed",
-    CurrentValue = cfg.BeastSpeed, Flag = "BeastSpeed",
-    Callback = function(v) cfg.BeastSpeed = v end })
+BST:CreateSection("Movimento")
+BST:CreateToggle({Name="Beast Speed",CurrentValue=cfg.BeastSpeed,Flag="BeastSpeed",Callback=function(v)cfg.BeastSpeed=v end})
+BST:CreateSlider({Name="Velocidade Beast",Range={16,150},Increment=2,CurrentValue=cfg.BeastSpeedVal,Flag="BeastSpeedVal",Callback=function(v)cfg.BeastSpeedVal=v end})
+BST:CreateToggle({Name="Teleport to Survivor",CurrentValue=cfg.BeastTeleport,Flag="BeastTeleport",Callback=function(v)cfg.BeastTeleport=v end})
 
-TabBeast:CreateSlider({ Name = "Velocidade Beast",
-    Range = {16,120}, Increment = 2,
-    CurrentValue = cfg.BeastSpeedVal, Flag = "BeastSpeedVal",
-    Callback = function(v) cfg.BeastSpeedVal = v end })
-
-TabBeast:CreateToggle({ Name = "Teleport to Survivor",
-    CurrentValue = cfg.BeastTeleport, Flag = "BeastTeleport",
-    Callback = function(v) cfg.BeastTeleport = v end })
-
-TabBeast:CreateToggle({ Name = "Auto Freeze",
-    CurrentValue = cfg.BeastAutoFreeze, Flag = "BeastAutoFreeze",
-    Callback = function(v) cfg.BeastAutoFreeze = v end })
-
-TabBeast:CreateToggle({ Name = "Freeze All",
-    CurrentValue = cfg.BeastFreezeAll, Flag = "BeastFreezeAll",
-    Callback = function(v) cfg.BeastFreezeAll = v end })
-
-TabBeast:CreateButton({ Name = "Fling Survivor Mais Perto",
-    Callback = function()
-        local root = getRootPart()
-        if not root then return end
-        local nearest, dist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and isAlive(p) and not isBeast(p) then
-                local r = p.Character
-                    and p.Character:FindFirstChild("HumanoidRootPart")
-                if r then
-                    local d = (r.Position - root.Position).Magnitude
-                    if d < dist then dist = d; nearest = p end
-                end
-            end
-        end
-        if nearest then flingTarget(nearest) end
-    end })
+BST:CreateSection("Ataque")
+BST:CreateToggle({Name="Auto Freeze",CurrentValue=cfg.BeastAutoFreeze,Flag="BeastAutoFreeze",Callback=function(v)cfg.BeastAutoFreeze=v end})
+BST:CreateToggle({Name="Kill Aura",CurrentValue=cfg.BeastKillAura,Flag="BeastKillAura",Callback=function(v)cfg.BeastKillAura=v end})
+BST:CreateSlider({Name="Aura Range",Range={5,60},Increment=5,CurrentValue=cfg.BeastAuraRange,Flag="BeastAuraRange",Callback=function(v)cfg.BeastAuraRange=v end})
+BST:CreateToggle({Name="Freeze All",CurrentValue=cfg.BeastFreezeAll,Flag="BeastFreezeAll",Callback=function(v)cfg.BeastFreezeAll=v end})
+BST:CreateToggle({Name="No Cooldown",CurrentValue=cfg.BeastNoCD,Flag="BeastNoCD",Callback=function(v)cfg.BeastNoCD=v end})
+BST:CreateButton({Name="Fling Survivor Mais Perto",Callback=function()
+    local survivors = getPlayers(true, false, true)
+    local nearest = findNearest(survivors, function(p)
+        local r = p.Character
+            and p.Character:FindFirstChild("HumanoidRootPart")
+        return r and r.Position or nil
+    end)
+    if nearest then flingPlayer(nearest) end
+end})
 
 -- ── ABA: MISC ─────────────────────────────────────────────────
-local TabMisc = Window:CreateTab("Misc", "settings")
+local MSC = Window:CreateTab("Misc", "settings")
 
-TabMisc:CreateToggle({ Name = "Anti-AFK",
-    CurrentValue = cfg.AntiAFK, Flag = "AntiAFK",
-    Callback = function(v) cfg.AntiAFK = v end })
+MSC:CreateSection("Utilidades")
+MSC:CreateToggle({Name="Anti-AFK",CurrentValue=cfg.AntiAFK,Flag="AntiAFK",Callback=function(v)cfg.AntiAFK=v end})
+MSC:CreateToggle({Name="Stats HUD",CurrentValue=cfg.StatsHUD,Flag="StatsHUD",Callback=function(v)cfg.StatsHUD=v end})
+MSC:CreateToggle({Name="Flashlight",CurrentValue=cfg.Flashlight,Flag="Flashlight",Callback=function(v)cfg.Flashlight=v;setFlashlight(v) end})
+MSC:CreateToggle({Name="Crosshair Custom",CurrentValue=cfg.CrosshairCustom,Flag="CrosshairCustom",Callback=function(v)cfg.CrosshairCustom=v end})
+MSC:CreateColorPicker({Name="Cor Crosshair",Color=cfg.CrosshairCol,Flag="CrosshairCol",Callback=function(v)cfg.CrosshairCol=v end})
 
-TabMisc:CreateToggle({ Name = "Stats HUD",
-    CurrentValue = cfg.StatsHUD, Flag = "StatsHUD",
-    Callback = function(v) cfg.StatsHUD = v end })
+MSC:CreateSection("Chat")
+MSC:CreateToggle({Name="Chat Spammer",CurrentValue=cfg.ChatSpammer,Flag="ChatSpammer",Callback=function(v)cfg.ChatSpammer=v end})
+MSC:CreateInput({Name="Mensagem",CurrentValue=cfg.ChatMsg,PlaceholderText="mensagem aqui",RemoveTextAfterFocusLost=false,Flag="ChatMsg",Callback=function(v)cfg.ChatMsg=v end})
+MSC:CreateSlider({Name="Delay (s)",Range={1,30},Increment=1,CurrentValue=cfg.ChatDelay,Flag="ChatDelay",Callback=function(v)cfg.ChatDelay=v end})
 
-TabMisc:CreateToggle({ Name = "Flashlight",
-    CurrentValue = cfg.Flashlight, Flag = "Flashlight",
-    Callback = function(v)
-        cfg.Flashlight = v
-        toggleFlashlight(v)
-    end })
+MSC:CreateSection("Servidor")
+MSC:CreateButton({Name="Rejoin",Callback=rejoin})
+MSC:CreateButton({Name="Server Hop",Callback=rejoin})
 
-TabMisc:CreateToggle({ Name = "Chat Spammer",
-    CurrentValue = cfg.ChatSpammer, Flag = "ChatSpammer",
-    Callback = function(v) cfg.ChatSpammer = v end })
-
-TabMisc:CreateInput({ Name = "Mensagem Spammer",
-    CurrentValue = cfg.ChatMsg,
-    PlaceholderText = "mensagem aqui",
-    RemoveTextAfterFocusLost = false, Flag = "ChatMsg",
-    Callback = function(v) cfg.ChatMsg = v end })
-
-TabMisc:CreateSlider({ Name = "Delay Spammer (s)",
-    Range = {1,30}, Increment = 1,
-    CurrentValue = cfg.ChatDelay, Flag = "ChatDelay",
-    Callback = function(v) cfg.ChatDelay = v end })
-
-TabMisc:CreateButton({ Name = "Rejoin",
-    Callback = rejoin })
-
-TabMisc:CreateButton({ Name = "Server Hop",
-    Callback = serverHop })
-
--- ── Notificação ────────────────────────────────────────────────
+-- ── Notificação de boot ────────────────────────────────────────
 Rayfield:Notify({
-    Title    = "olliE | Flee The Facility",
-    Content  = "tudo carregado, absolute olliE to Sam",
-    Duration = 4,
+    Title    = "olliE | FTF v2",
+    Content  = "carregado, absolute olliE to Sam — gng",
+    Duration = 5,
+    Image    = "skull",
 })
+
+print("[olliE] FTF v2 carregado com sucesso")
